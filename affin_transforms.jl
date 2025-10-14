@@ -3,9 +3,12 @@ using LinearAlgebra
 
 App()
 
+ParametricSurface(callback::Function,width,height,uStart,uEnd,vStart,vEnd,color,dependents::Juliagebra.DependentsT) =
+Juliagebra._ParametricSurface(_call=callback,_width=width,_height=height,_uStart=uStart,_uEnd=uEnd,_vStart=vStart,_vEnd=vEnd,_color=color,_deps=dependents)
+
 # ? Helper Triangle function
-function Triangle(a,b,c)
-    return ParametricSurface(3,3,0.0,1.0,0.0,1.0,[a,b,c]) do u,v,a,b,c
+function Triangle(a,b,c,color)
+    return ParametricSurface(3,3,0.0,1.0,0.0,1.0,color,[a,b,c]) do u,v,a,b,c
         
         if (u>=0.5 && v>=0.5)
             u = 0.5
@@ -15,33 +18,6 @@ function Triangle(a,b,c)
         return (1-u-v) .* a[:xyz] .+ u .* b[:xyz] .+ v .* c[:xyz]
     end
 end
-
-function Quad(o,x,y)
-    return ParametricSurface(2,2,0.0,1.0,0.0,1.0,[o,x,y]) do u,v,o,x,y
-        
-        #if(v>=u)
-        #    v=u
-        #end
-        
-        vx = x[:xyz] .- o[:xyz]
-        vy = y[:xyz] .- o[:xyz]
-
-        return (o[:xyz] .+ u .* vx .+ v .* vy) 
-    end
-end
-
-# ? Helper Corner function
-function Corner(o,x,y)
-    pntX = x._x + y._x - o._x
-    pntY = x._y + y._y - o._y
-    pntZ = x._z + y._z - o._z
-
-    return Point(pntX,pntY,pntZ,[o,x,y]) do o,x,y
-        return  x[:xyz] .+ y[:xyz] .- o[:xyz]
-    end
-end
-# ? Helper Quad function
-QuadWithCorner(o,x,y) = return (Quad(o,x,y),Corner(o,x,y))
 
 # ? Helper Corner function
 function Corner(o,x,y)
@@ -53,14 +29,23 @@ function Corner(o,x,y)
 end
 
 # ? Helper Quad function
-
-function Quad(p1,p2,p3,p4)
-    Triangle(p1,p2,p3)
-    Triangle(p4,p3,p2)
+function Quad(p1,p2,p3,p4,color)
+    Triangle(p1,p2,p3,color)
+    Triangle(p4,p3,p2,color)
 end
 
 # ? Helper Cuboid function
-function Cuboid(x,y,z)
+function assembleCuboidFaces(p1,p2,p3,p4,p5,p6,p7,p8,color)
+    Quad(p1,p3,p2,p5,color)
+    Quad(p1,p2,p4,p6,color)
+    Quad(p1,p4,p3,p7,color)
+    Quad(p4,p6,p7,p8,color)
+    Quad(p3,p7,p5,p8,color)
+    Quad(p5,p8,p2,p6,color)
+end
+
+# ? Helper Cuboid function
+function Cuboid(x,y,z,color)
     bottomLeftCorner = (x,y,z) .- 0.5
     
     p1 = Point(bottomLeftCorner...)
@@ -73,14 +58,75 @@ function Cuboid(x,y,z)
     p7 = Corner(p1,p3,p4)
     p8 = Corner(p4,p6,p7)
 
-    Quad(p1,p2,p3,p5)
-    Quad(p1,p4,p2,p6)
-    Quad(p1,p3,p4,p7)
-    Quad(p4,p7,p6,p8)
-    Quad(p3,p5,p7,p8)
-    Quad(p5,p2,p8,p6)
+    assembleCuboidFaces(p1,p2,p3,p4,p5,p6,p7,p8,color)
 
     return [p1,p2,p3,p4,p5,p6,p7,p8]
+end
+
+function Sphere(r,centerX,centerY,centerZ,color,toggle)
+    return ParametricSurface(5,5,0.0,pi,0.0,2.0*pi,color,[toggle]) do alfa,beta,toggle
+        if (toggle[:state])
+            return nothing
+        end
+        
+        x = centerX + r * sin(alfa) * cos(beta)
+        y = centerY + r * sin(alfa) * sin(beta)
+        z = centerZ + r * cos(alfa)
+
+        return (x,y,z)
+    end
+end
+
+function PlanesOfXYZ()
+    # ? Toggle to show xyPlane
+    xyToggle = Toggle()
+    xyPlane = ParametricSurface(2,2,-10.0,10.0,-10.0,10.0,(1.0,1.0,1.0) .* 3.0,[xyToggle]) do u,v,xyToggle
+        if(!xyToggle[:state])
+            return nothing
+        end
+
+        return (u,v,0.0)
+    end
+
+    # ? Toggle to show xzPlane
+    xzToggle = Toggle()
+    xzPlane = ParametricSurface(2,2,-10.0,10.0,-10.0,10.0,(1.0,1.0,1.0) .* 3.0,[xzToggle]) do u,v,xzToggle
+        if(!xzToggle[:state])
+            return nothing
+        end
+
+        return (u,0.0,v)
+    end
+
+    # ? Toggle to show yzPlane
+    yzToggle = Toggle()
+    yzPlane = ParametricSurface(2,2,-10.0,10.0,-10.0,10.0,(1.0,1.0,1.0) .* 3.0,[yzToggle]) do u,v,yzToggle
+        if(!yzToggle[:state])
+            return nothing
+        end
+
+        return (0.0,u,v)
+    end
+end
+
+function LinesOfXYZ()
+    xToggle = Toggle()
+    for x in -10:10
+        Sphere(0.125,x,0.0,0.0,(8.0,0.0,0.0),xToggle)
+    end
+    
+    yToggle = Toggle()
+    for y in -10:10
+        Sphere(0.125,0.0,y,0.0,(0.0,8.0,0.0),yToggle)
+    end
+
+    zToggle = Toggle()
+    for z in -10:10
+        Sphere(0.125,0.0,0.0,z,(0.0,0.0,8.0),zToggle)
+    end
+    
+    
+
 end
 
 function Identity()
@@ -105,20 +151,48 @@ function Rotate100(alfa)
     return [
         1.0 0.0 0.0 0.0;
         0.0 cos(alfa) -sin(alfa) 0.0;
-        0.0 sin(alfa) cos(alfa) 0.0;
+        0.0 sin(alfa)  cos(alfa) 0.0;
         0.0 0.0 0.0 1.0
     ]
 end
 
+function Rotate010(alfa)
+    return [
+        cos(alfa) 0.0 sin(alfa) 0.0;
+        0.0 1.0 0.0 0.0;
+        -sin(alfa) 0.0 cos(alfa) 0.0;
+        0.0 0.0 0.0 1.0
+    ]
+end
 
+function Rotate001(alfa)
+    return [
+        cos(alfa) -sin(alfa) 0.0 0.0;
+        sin(alfa) cos(alfa) 0.0 0.0;
+        0.0 0.0 1.0 0.0;
+        0.0 0.0 0.0 1.0
+    ]
+end
 
-cuboidCorners = Cuboid(0,0,0)
+function Scale(x,y,z)
+    return [
+        x 0 0 0;
+        0 y 0 0;
+        0 0 z 0;
+        0 0 0 1.0
+    ]    
+end
 
+MirrorXY() = Scale(1.0,1.0,-1.0)
+MirrorXZ() = Scale(1.0,-1.0,1.0)
+MirrorYZ() = Scale(-1.0,1.0,1.0)
 
+LinesOfXYZ()
+PlanesOfXYZ()
 
+# ? Toggle for visualizing transformed object
 t1 = Toggle()
 txt1 = TextBox("Result = nothing")
-
 gd1 = GenericDependent(Identity(),[txt1]) do txt1
     value = nothing
     
@@ -127,7 +201,7 @@ gd1 = GenericDependent(Identity(),[txt1]) do txt1
         textSymbols = Meta.parse(text)
     
         UserFunc = @eval function ()
-                try 
+            try 
                 $textSymbols
                 return Result
             catch err
@@ -149,6 +223,13 @@ gd1 = GenericDependent(Identity(),[txt1]) do txt1
     return value
 end
 
+
+
+
+
+cuboidCorners = Cuboid(0,0,0,(0.0,1.0,0.0))
+transformedCorners = []
+
 for corner in cuboidCorners
     transformedPoint = Point(NaN,NaN,NaN,[t1,gd1,corner]) do t1,gd1,corner
         if(!t1[:state])
@@ -163,7 +244,10 @@ for corner in cuboidCorners
         
         return xyz 
     end
+
+    push!(transformedCorners,transformedPoint)
 end
 
+assembleCuboidFaces(transformedCorners...,(0.0,0.0,1.0))
 
 play!()
