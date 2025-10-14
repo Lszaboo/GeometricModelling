@@ -7,8 +7,12 @@ ParametricSurface(callback::Function,width,height,uStart,uEnd,vStart,vEnd,color,
 Juliagebra._ParametricSurface(_call=callback,_width=width,_height=height,_uStart=uStart,_uEnd=uEnd,_vStart=vStart,_vEnd=vEnd,_color=color,_deps=dependents)
 
 # ? Helper Triangle function
-function Triangle(a,b,c,color)
-    return ParametricSurface(3,3,0.0,1.0,0.0,1.0,color,[a,b,c]) do u,v,a,b,c
+function Triangle(a,b,c,color,toggle)
+    return ParametricSurface(3,3,0.0,1.0,0.0,1.0,color,[a,b,c,toggle]) do u,v,a,b,c,toggle
+        
+        if (toggle[:state])
+            return nothing
+        end
         
         if (u>=0.5 && v>=0.5)
             u = 0.5
@@ -29,19 +33,21 @@ function Corner(o,x,y)
 end
 
 # ? Helper Quad function
-function Quad(p1,p2,p3,p4,color)
-    Triangle(p1,p2,p3,color)
-    Triangle(p4,p3,p2,color)
+function Quad(p1,p2,p3,p4,color,toggle)
+    Triangle(p1,p2,p3,color,toggle)
+    Triangle(p4,p3,p2,color,toggle)
 end
 
 # ? Helper Cuboid function
 function assembleCuboidFaces(p1,p2,p3,p4,p5,p6,p7,p8,color)
-    Quad(p1,p3,p2,p5,color)
-    Quad(p1,p2,p4,p6,color)
-    Quad(p1,p4,p3,p7,color)
-    Quad(p4,p6,p7,p8,color)
-    Quad(p3,p7,p5,p8,color)
-    Quad(p5,p8,p2,p6,color)
+    toggle = Toggle()
+    
+    Quad(p1,p3,p2,p5,color,toggle)
+    Quad(p1,p2,p4,p6,color,toggle)
+    Quad(p1,p4,p3,p7,color,toggle)
+    Quad(p4,p6,p7,p8,color,toggle)
+    Quad(p3,p7,p5,p8,color,toggle)
+    Quad(p5,p8,p2,p6,color,toggle)
 end
 
 # ? Helper Cuboid function
@@ -64,7 +70,15 @@ function Cuboid(x,y,z,color)
 end
 
 function Sphere(r,centerX,centerY,centerZ,color,toggle)
-    return ParametricSurface(8,8,0.0,pi,0.0,2.0*pi,color,[toggle]) do alfa,beta,toggle
+    return Point(centerX,centerY,centerZ,[toggle]) do toggle
+        if(toggle[:state])
+            return nothing
+        end
+
+        return (centerX,centerY,centerZ)
+    end
+    
+    return ParametricSurface(20,20,0.0,pi,0.0,2.0*pi,color,[toggle]) do alfa,beta,toggle
         if (toggle[:state])
             return nothing
         end
@@ -125,7 +139,7 @@ function LinesOfXYZ()
         Sphere(0.2,0.0,0.0,z,(0.0,0.0,8.0),zToggle)
     end
     
-    ParametricCurve(-10.0,10.0,2,(0.8,0.4,0.4),[xToggle]) do x, xToggle
+    ParametricCurve(-10.0,10.0,2,(0.8,0.2,0.2),[xToggle]) do x, xToggle
         if (xToggle[:state])
             return nothing
         end
@@ -133,7 +147,7 @@ function LinesOfXYZ()
         return (x,0.0,0.0)       
     end
 
-    ParametricCurve(-10.0,10.0,2,(0.4,0.8,0.4),[yToggle]) do y, yToggle
+    ParametricCurve(-10.0,10.0,2,(0.2,0.8,0.2),[yToggle]) do y, yToggle
         if (yToggle[:state])
             return nothing
         end
@@ -141,7 +155,7 @@ function LinesOfXYZ()
         return (0.0,y,0.0)        
     end
 
-    ParametricCurve(-10.0,10.0,2,(0.4,0.4,0.8),[zToggle]) do z, zToggle
+    ParametricCurve(-10.0,10.0,2,(0.2,0.2,0.8),[zToggle]) do z, zToggle
         if (zToggle[:state])
             return nothing
         end
@@ -205,24 +219,53 @@ function Scale(x,y,z)
     ]    
 end
 
+function Shear(lam,mu)
+    return [
+        1.0 0 lam 0;
+        0 1.0 mu 0;
+        0 0 1.0 0;
+        0 0 0 1.0
+    ]
+end
+
+function Central(s)
+    return [
+        1.0 0 0 0;
+        0 1.0 0 0;
+        0 0 0 0;
+        0 0 -(1.0/s) 1.0
+    ]
+end
+
+function Parallel(vx,vy,vz)
+    return [
+        1.0 0 -vx/vz 0;
+        0 1.0 -vy/vz 0;
+        0 0 0 0;
+        0 0 0.0 1.0
+    ]
+end
+
 MirrorXY() = Scale(1.0,1.0,-1.0)
 MirrorXZ() = Scale(1.0,-1.0,1.0)
 MirrorYZ() = Scale(-1.0,1.0,1.0)
+Ortho() = Scale(1.0,1.0,0.0)
 
 LinesOfXYZ()
 PlanesOfXYZ()
 
 # ? Toggle for visualizing transformed object
 t1 = Toggle()
+s1 = Slider(0,1)
 txt1 = TextBox("Result = nothing")
-gd1 = GenericDependent(Identity(),[txt1]) do txt1
+gd1 = GenericDependent(Identity(),[txt1,s1]) do txt1,s1
     value = nothing
     
     try
         text = "begin\n" * txt1[:text] * "\nend"
         textSymbols = Meta.parse(text)
     
-        UserFunc = @eval function ()
+        UserFunc = @eval function (s1)
             try 
                 $textSymbols
                 return Result
@@ -232,7 +275,7 @@ gd1 = GenericDependent(Identity(),[txt1]) do txt1
             return nothing
         end
         
-        value = Base.invokelatest(UserFunc)
+        value = Base.invokelatest(UserFunc,s1[:state])
     catch err
         println("Error occured parsing UserFunc:\n$(err)\nFor this text:\n$(text)")
     end
@@ -245,27 +288,38 @@ gd1 = GenericDependent(Identity(),[txt1]) do txt1
     return value
 end
 
-cuboidCorners = Cuboid(0,0,0,(0.0,1.0,0.0))
-transformedCorners = []
+cuboids = []
+push!(cuboids,(Cuboid( 0.0, 0.0, 0.5,(0.8,0.4,0.2)),(0.8,0.4,0.2)))
+push!(cuboids,(Cuboid( 0.5, 0.2, 1.5,(0.4,0.8,0.2)),(0.4,0.8,0.2)))
+push!(cuboids,(Cuboid(-0.5,-0.2, 1.5,(0.4,0.2,0.8)),(0.4,0.2,0.8)))
 
-for corner in cuboidCorners
-    transformedPoint = Point(NaN,NaN,NaN,[t1,gd1,corner]) do t1,gd1,corner
-        if(!t1[:state])
-            return nothing
+for cuboid in cuboids
+    cuboidCorners,color = cuboid
+    transformedCorners = []
+    for corner in cuboidCorners
+        transformedPoint = Point(NaN,NaN,NaN,[t1,gd1,corner]) do t1,gd1,corner
+            if(!t1[:state])
+                return nothing
+            end
+
+            xyzw = [corner[:xyz]...,1]
+
+            xyzw = gd1[:val] * xyzw
+            w = xyzw[4]
+            xyz = tuple(((xyzw / w)[1:3])...)
+
+            return xyz 
         end
 
-        xyzw = [corner[:xyz]...,1]
-
-        xyzw = gd1[:val] * xyzw
-        w = xyzw[4]
-        xyz = tuple(((xyzw / w)[1:3])...)
-        
-        return xyz 
+        push!(transformedCorners,transformedPoint)
     end
 
-    push!(transformedCorners,transformedPoint)
+    assembleCuboidFaces(transformedCorners...,1.0 .- color)
 end
 
-assembleCuboidFaces(transformedCorners...,(0.0,0.0,1.0))
-
 play!()
+
+
+
+
+
