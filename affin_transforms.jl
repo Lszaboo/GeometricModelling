@@ -64,7 +64,7 @@ function Cuboid(x,y,z,color)
 end
 
 function Sphere(r,centerX,centerY,centerZ,color,toggle)
-    return ParametricSurface(5,5,0.0,pi,0.0,2.0*pi,color,[toggle]) do alfa,beta,toggle
+    return ParametricSurface(8,8,0.0,pi,0.0,2.0*pi,color,[toggle]) do alfa,beta,toggle
         if (toggle[:state])
             return nothing
         end
@@ -112,20 +112,42 @@ end
 function LinesOfXYZ()
     xToggle = Toggle()
     for x in -10:10
-        Sphere(0.125,x,0.0,0.0,(8.0,0.0,0.0),xToggle)
+        Sphere(0.2,x,0.0,0.0,(8.0,0.0,0.0),xToggle)
     end
     
     yToggle = Toggle()
     for y in -10:10
-        Sphere(0.125,0.0,y,0.0,(0.0,8.0,0.0),yToggle)
+        Sphere(0.2,0.0,y,0.0,(0.0,8.0,0.0),yToggle)
     end
 
     zToggle = Toggle()
     for z in -10:10
-        Sphere(0.125,0.0,0.0,z,(0.0,0.0,8.0),zToggle)
+        Sphere(0.2,0.0,0.0,z,(0.0,0.0,8.0),zToggle)
     end
     
-    
+    ParametricCurve(-10.0,10.0,2,(0.8,0.4,0.4),[xToggle]) do x, xToggle
+        if (xToggle[:state])
+            return nothing
+        end
+        
+        return (x,0.0,0.0)       
+    end
+
+    ParametricCurve(-10.0,10.0,2,(0.4,0.8,0.4),[yToggle]) do y, yToggle
+        if (yToggle[:state])
+            return nothing
+        end
+        
+        return (0.0,y,0.0)        
+    end
+
+    ParametricCurve(-10.0,10.0,2,(0.4,0.4,0.8),[zToggle]) do z, zToggle
+        if (zToggle[:state])
+            return nothing
+        end
+        
+        return (0.0,0.0,z)        
+    end
 
 end
 
@@ -222,10 +244,6 @@ gd1 = GenericDependent(Identity(),[txt1]) do txt1
 
     return value
 end
-
-
-
-
 
 cuboidCorners = Cuboid(0,0,0,(0.0,1.0,0.0))
 transformedCorners = []
