@@ -1,5 +1,6 @@
 using Juliagebra
 using JSON
+using LinearAlgebra
 
 include("code_box.jl")
 
@@ -36,6 +37,8 @@ INIT_SPLINEDATA_STRING = """
 """
 
 MAX_DATA_LENGTH = 10
+
+NAN_COORDS = (NaN64,NaN64,NaN64)
 
 pData = CodeBox("p",INIT_P)
 uData = CodeBox("u",INIT_U)
@@ -151,6 +154,8 @@ for i in 1:MAX_DATA_LENGTH
     push!(uDependents,uDependent)
 end
 
+# ? Hermite-Interpolation
+
 function Bernstein(n,k,t)
     return binomial(n,k) * ((1-t)^(n-k)) * (t^(k))
 end
@@ -166,6 +171,37 @@ function QuadradicBezier(p0,p1,p2,p3,u,a=0.0,b=1.0)
     return val
 end
 
+function CreateHermiteCurve(p0,p1,pl0,pl1,a,b,color)
+    b0 = GenericDependent(NAN_COORDS,[p0]) do p0
+        return p0[:xyz]
+    end
+
+    b1 = GenericDependent(NAN_COORDS,[p0,pl0,a,b]) do p0,pl0,a,b
+        mu = b[:val] - a[:val]
+        l0 = pl0[:xyz] .- p0[:xyz]
+        return l0 .* (mu / 3.0) .+ p0[:xyz]
+    end
+
+    b2 = GenericDependent(NAN_COORDS,[p1,pl1,a,b]) do p1,pl1,a,b
+        mu = b[:val] - a[:val]
+        l1 = pl1[:xyz] .- p1[:xyz]
+        return -1 .* l1 .* (mu / 3.0) .+ p1[:xyz]
+    end
+
+    b3 = GenericDependent(NAN_COORDS,[p1]) do p1
+        return p1[:xyz]
+    end
+    
+    ParametricCurve(0.0,1.0,1000,color,[a,b,b0,b1,b2,b3]) do t,a,b,b0,b1,b2,b3
+        u = (b[:val] - a[:val]) * t + a[:val]
+        return QuadradicBezier(b0[:val],
+                               b1[:val],
+                               b2[:val],
+                               b3[:val],
+                               u,a[:val],b[:val])
+    end
+end
+
 for i in 1:(MAX_DATA_LENGTH-1)
     println("$(i) - $(i+1)")
     p0 = points[i]
@@ -177,53 +213,104 @@ for i in 1:(MAX_DATA_LENGTH-1)
     a = uDependents[i]
     b = uDependents[i+1]
 
-    GEN_COORDS = (NaN64,NaN64,NaN64)
+    CreateHermiteCurve(p0,p1,pl0,pl1,a,b,(0.153,0.773,0.369))    
+end
 
-    b0 = GenericDependent(GEN_COORDS,[p0]) do p0
-        return p0[:xyz]
-    end
+# ? Catmull-Rom
 
-    b1 = GenericDependent(GEN_COORDS,[p0,pl0,a,b]) do p0,pl0,a,b
-        mu = b[:val] - a[:val]
-        l0 = pl0[:xyz] .- p0[:xyz]
-        return l0 .* (mu / 3.0) .+ p0[:xyz]
-    end
+function FMILLTangent(p0,p2)
+    l1 = collect(p2.-p0)
+    l1 = normalize(l1)
+    return Tuple(l1)
+end
 
-    b2 = GenericDependent(GEN_COORDS,[p1,pl1,a,b]) do p1,pl1,a,b
-        mu = b[:val] - a[:val]
-        l1 = pl1[:xyz] .- p1[:xyz]
-        return -1 .* l1 .* (mu / 3.0) .+ p1[:xyz]
-    end
+function BesselTangentAt0(p0,p1,p2)
+    l0 = collect(4.0 .* (p1 .- p0) .- (p2 .- p0))
+    l0 = normalize(l0)
+    return Tuple(l0)
+end
 
-    b3 = GenericDependent(GEN_COORDS,[p1]) do p1
-        return p1[:xyz]
+function BesselTangentAt2(p0,p1,p2)
+    l2 = collect(4.0 .* (p2 .- p1) .- (p2 .- p0))
+    l2 = normalize(l2)
+    return Tuple(l2)
+end
+
+
+crLEndPoints = []
+
+p0 = points[1]
+p1 = points[2]
+p2 = points[3]
+crL1 = Point([p0,p1,p2]) do p0,p1,p2
+    println("1 - Here - Bessel0")
+    return p0[:xyz] .+ BesselTangentAt0(p0[:xyz],p1[:xyz],p2[:xyz])
+end
+
+push!(crLEndPoints,crL1)
+
+p0 = points[1]
+p1 = points[2]
+p2 = points[3]
+crL2 = Point([p0,p1,p2,splineData]) do p0,p1,p2,splineData
+    data = splineData[:val]
+    
+    if data.dataLength == 2
+        println("2 - Here - Bessel2")
+        return p2[:xyz] .+ BesselTangentAt2(p0[:xyz],p1[:xyz],p2[:xyz])
     end
     
-    ParametricCurve(0.0,1.0,[a,b,b0,b1,b2,b3]) do t,a,b,b0,b1,b2,b3
-        u = (b[:val] - a[:val]) * t + a[:val]
-        return QuadradicBezier(b0[:val],
-                               b1[:val],
-                               b2[:val],
-                               b3[:val],
-                               u,a[:val],b[:val])
+    println("2 - Here - FMILL")
+    return p1[:xyz] .+ FMILLTangent(p0[:xyz],p2[:xyz])
+end
+
+push!(crLEndPoints,crL2)
+
+for i in 3:(MAX_DATA_LENGTH-1)
+    pm1 = points[i-2]
+    local p0 = points[i-1]
+    local p1 = points[i]
+    local p2 = points[i+1]
+    crLI = Point([pm1,p0,p1,p2,splineData]) do pm1,p0,p1,p2,splineData
+        data = splineData[:val]
+        
+        if i == data.dataLength
+            println("$(i) - Here - Bessel2")
+            return p1[:xyz] .+ BesselTangentAt2(pm1[:xyz],p0[:xyz],p1[:xyz])
+        elseif i < data.dataLength 
+            println("$(i) - Here - FMILL")
+            return p1[:xyz] .+ FMILLTangent(p0[:xyz],p2[:xyz])
+        end
+        println("$(i) - Here")
+        return nothing
     end
 
-    # ! Point([b0]) do b0
-    # !     return b0[:val]
-    # ! end
-    # ! 
-    # ! Point([b1]) do b1
-    # !     return b1[:val]
-    # ! end
-    # ! 
-    # ! Point([b2]) do b2
-    # !     return b2[:val]
-    # ! end
-    # ! 
-    # ! Point([b3]) do b3
-    # !     return b3[:val]
-    # ! end
+    push!(crLEndPoints,crLI)
+end
 
+p0 = points[MAX_DATA_LENGTH-2]
+p1 = points[MAX_DATA_LENGTH-1]
+p2 = points[MAX_DATA_LENGTH]
+crLN = Point([p0,p1,p2]) do p0,p1,p2
+    println("N - Here - Bessel2") 
+    return p2[:xyz] .+ BesselTangentAt2(p0[:xyz],p1[:xyz],p2[:xyz])
+end
+
+push!(crLEndPoints,crLN)
+println(length(crLEndPoints))
+
+for i in 1:(MAX_DATA_LENGTH-1)
+    println("$(i) - $(i+1)")
+    local p0 = points[i]
+    local p1 = points[i+1]
+
+    pl0 = crLEndPoints[i]
+    pl1 = crLEndPoints[i+1]
+
+    a = uDependents[i]
+    b = uDependents[i+1]
+
+    CreateHermiteCurve(p0,p1,pl0,pl1,a,b,(0.969,0.224,0.439))
 end
 
 play!()
