@@ -56,27 +56,42 @@ splineData = GenericDependent(INIT_SPLINEDATA,[txtSplineData,pData,uData,lData])
         dataLength = data["DataLength"]
 
         p = []
-        if data["p"] == "RANDOM"
-
-        elseif data["p"] == "BOX"
+        pStr = uppercase(data["p"])
+        if pStr == "RANDOM"
+            for i in 1:dataLength
+                xyz = (rand(),rand(),rand()) .* 20.0 .- 10.0 
+                push!(p,xyz)
+            end
+        elseif pStr == "BOX"
             p = pData[:val]
         end
         
         u = []
-        if data["u"] == "UNIFORM"
-        
-        elseif data["u"] == "RANDOM"
-
-        elseif data["u"] == "ARCLENGTH"
-
-        elseif data["u"] == "BOX"
+        uStr = uppercase(data["u"])
+        if uStr == "UNIFORM"
+            for i in 0:(dataLength-1)
+                push!(u,Float64(i))
+            end
+        elseif uStr == "RANDOM"
+            prev = 0.0
+            for i in 1:dataLength
+                prev = prev + rand()*5.0
+                push!(u,prev)
+            end
+        elseif uStr == "ARCLENGTH"
+            
+        elseif uStr == "BOX"
             u = uData[:val]
         end
         
         l = []
-        if data["l"] == "RANDOM"
-
-        elseif data["l"] == "BOX"
+        lStr = uppercase(data["l"])
+        if lStr == "RANDOM"
+            for i in 1:dataLength
+                xyz = (rand(),rand(),rand()) .* 10.0 .- 5.0 
+                push!(l,xyz)
+            end
+        elseif lStr == "BOX"
             l = lData[:val]
         end
 
