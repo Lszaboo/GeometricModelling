@@ -1,0 +1,214 @@
+using Juliagebra
+using JSON
+
+include("code_box.jl")
+
+App()
+
+struct SplineData
+    dataLength::Int
+    p::Vector{Tuple{Float64,Float64,Float64}}
+    u::Vector{Float64}
+    l::Vector{Tuple{Float64,Float64,Float64}}
+end
+
+INIT_DATA_LENGTH = 3
+INIT_P = [(0.0,0.0,0.0),(1.0,0.0,1.0),(2.0,0.0,-1.0)]
+INIT_U = [1.0,2.0,3.0]
+INIT_L = [(0.0,0.0,1.0),(0.0,0.0,-1.0),(0.0,0.0,-1.0)]
+
+INIT_SPLINEDATA = SplineData(
+    INIT_DATA_LENGTH,
+    INIT_P,
+    INIT_U,
+    INIT_L
+)
+
+INIT_SPLINEDATA_STRING = """
+{
+"U_Modes": ["BOX","UNIFORM","RANDOM","ARCLENGTH"],
+"PL_Modes": ["BOX"],
+"DataLength": 3,
+"p": "BOX",
+"u": "BOX",
+"l": "BOX"
+}
+"""
+
+MAX_DATA_LENGTH = 10
+
+pData = CodeBox("p",INIT_P)
+uData = CodeBox("u",INIT_U)
+lData = CodeBox("l",INIT_L)
+
+resetSplineData = Toggle()
+txtSplineData = TextBox([resetSplineData]) do resetSplineData
+    return INIT_SPLINEDATA_STRING
+end
+
+
+splineData = GenericDependent(INIT_SPLINEDATA,[txtSplineData,pData,uData,lData]) do txtSplineData,pData,uData,lData
+    txt = txtSplineData[:text]
+
+    try
+        data = JSON.parse(txt)
+        
+        dataLength = data["DataLength"]
+
+        p = []
+        if data["p"] == "RANDOM"
+
+        elseif data["p"] == "BOX"
+            p = pData[:val]
+        end
+        
+        u = []
+        if data["u"] == "UNIFORM"
+        
+        elseif data["u"] == "RANDOM"
+
+        elseif data["u"] == "ARCLENGTH"
+
+        elseif data["u"] == "BOX"
+            u = uData[:val]
+        end
+        
+        l = []
+        if data["l"] == "RANDOM"
+
+        elseif data["l"] == "BOX"
+            l = lData[:val]
+        end
+
+        if !(length(p) == length(u) == length(l) == dataLength)
+            error("Length of p,u,v doesn't match DataLength!")
+        end
+
+        correctSplineData = SplineData(dataLength,p,u,l)
+        println("$(correctSplineData)")
+        
+        return correctSplineData
+    catch e
+        println("Error occured:")
+        println(string(e))
+        println("Reverting to INIT_SPLINEDATA...")
+        return INIT_SPLINEDATA
+    end
+
+end
+
+points = []
+vectorEndPoints = []
+uDependents = []
+
+for i in 1:MAX_DATA_LENGTH
+    point = Point([splineData]) do splineData
+        data = splineData[:val]
+        if 0<i && i<=data.dataLength
+            return data.p[i]
+        end
+
+        return nothing
+    end
+
+    vectorEndPoint = Point([splineData]) do splineData
+        data = splineData[:val]
+        if 0<i && i<=data.dataLength
+            return data.p[i] .+ data.l[i]
+        end
+
+        return nothing
+    end
+
+    uDependent = GenericDependent(0.0,[splineData]) do splineData
+        data = splineData[:val]
+        if 0<i && i<=data.dataLength
+            return data.u[i]
+        end
+
+        return NaN64
+    end
+
+    Segment(point,vectorEndPoint)
+
+    push!(points,point)
+    push!(vectorEndPoints,vectorEndPoint)
+    push!(uDependents,uDependent)
+end
+
+function Bernstein(n,k,t)
+    return binomial(n,k) * ((1-t)^(n-k)) * (t^(k))
+end
+
+function QuadradicBezier(p0,p1,p2,p3,u,a=0.0,b=1.0)
+    u = (u - a) / (b - a)
+
+    val =        p0 .* Bernstein(3,0,u)
+    val = val .+ p1 .* Bernstein(3,1,u)
+    val = val .+ p2 .* Bernstein(3,2,u)
+    val = val .+ p3 .* Bernstein(3,3,u)
+
+    return val
+end
+
+for i in 1:(MAX_DATA_LENGTH-1)
+    println("$(i) - $(i+1)")
+    p0 = points[i]
+    p1 = points[i+1]
+
+    pl0 = vectorEndPoints[i]
+    pl1 = vectorEndPoints[i+1]
+
+    a = uDependents[i]
+    b = uDependents[i+1]
+
+    GEN_COORDS = (NaN64,NaN64,NaN64)
+
+    b0 = GenericDependent(GEN_COORDS,[p0]) do p0
+        return p0[:xyz]
+    end
+
+    b1 = GenericDependent(GEN_COORDS,[p0,pl0,a,b]) do p0,pl0,a,b
+        mu = b[:val] - a[:val]
+        l0 = pl0[:xyz] .- p0[:xyz]
+        return l0 .* (mu / 3.0) .+ p0[:xyz]
+    end
+
+    b2 = GenericDependent(GEN_COORDS,[p1,pl1,a,b]) do p1,pl1,a,b
+        mu = b[:val] - a[:val]
+        l1 = pl1[:xyz] .- p1[:xyz]
+        return -1 .* l1 .* (mu / 3.0) .+ p1[:xyz]
+    end
+
+    b3 = GenericDependent(GEN_COORDS,[p1]) do p1
+        return p1[:xyz]
+    end
+    
+    ParametricCurve(0.0,1.0,[a,b,b0,b1,b2,b3]) do t,a,b,b0,b1,b2,b3
+        u = (b[:val] - a[:val]) * t + a[:val]
+        return QuadradicBezier(b0[:val],
+                               b1[:val],
+                               b2[:val],
+                               b3[:val],
+                               u,a[:val],b[:val])
+    end
+
+    # ! Point([b0]) do b0
+    # !     return b0[:val]
+    # ! end
+    # ! 
+    # ! Point([b1]) do b1
+    # !     return b1[:val]
+    # ! end
+    # ! 
+    # ! Point([b2]) do b2
+    # !     return b2[:val]
+    # ! end
+    # ! 
+    # ! Point([b3]) do b3
+    # !     return b3[:val]
+    # ! end
+
+end
+
+play!()
