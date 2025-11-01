@@ -6,6 +6,16 @@ include("code_box.jl")
 
 App()
 
+function Segment(fst,snd,color,toggle)
+    return ParametricCurve(0,1,2,color,[fst,snd,toggle]) do t,a,b,toggle
+        if (toggle[:state])
+            return nothing 
+        end
+        
+        return a[:xyz] .* t .+ (1-t) .* b[:xyz]
+    end
+end
+
 struct SplineData
     dataLength::Int
     p::Vector{Tuple{Float64,Float64,Float64}}
@@ -151,14 +161,14 @@ for i in 1:MAX_DATA_LENGTH
         return NaN64
     end
 
-    Segment(point,vectorEndPoint)
-
     push!(points,point)
     push!(vectorEndPoints,vectorEndPoint)
     push!(uDependents,uDependent)
 end
 
 # ? Hermite-Interpolation
+
+hermiteToggle = Toggle()
 
 function Bernstein(n,k,t)
     return binomial(n,k) * ((1-t)^(n-k)) * (t^(k))
@@ -175,8 +185,12 @@ function QuadradicBezier(p0,p1,p2,p3,u,a=0.0,b=1.0)
     return val
 end
 
-function QuadradicBezierCurve(a,b,b0,b1,b2,b3,color)
-    return ParametricCurve(0.0,1.0,1000,color,[a,b,b0,b1,b2,b3]) do t,a,b,b0,b1,b2,b3
+function QuadradicBezierCurve(a,b,b0,b1,b2,b3,color,toggle)
+    return ParametricCurve(0.0,1.0,1000,color,[a,b,b0,b1,b2,b3,toggle]) do t,a,b,b0,b1,b2,b3,toggle
+        if  (toggle[:state])
+            return nothing
+        end
+        
         u = (b[:val] - a[:val]) * t + a[:val]
         return QuadradicBezier(b0[:val],
                                b1[:val],
@@ -186,7 +200,7 @@ function QuadradicBezierCurve(a,b,b0,b1,b2,b3,color)
     end
 end
 
-function CreateHermiteCurve(p0,p1,pl0,pl1,a,b,color)
+function CreateHermiteCurve(p0,p1,pl0,pl1,a,b,color,toggle)
     b0 = GenericDependent(NAN_COORDS,[p0]) do p0
         return p0[:xyz]
     end
@@ -207,7 +221,13 @@ function CreateHermiteCurve(p0,p1,pl0,pl1,a,b,color)
         return p1[:xyz]
     end
     
-    QuadradicBezierCurve(a,b,b0,b1,b2,b3,color)
+    QuadradicBezierCurve(a,b,b0,b1,b2,b3,color,toggle)
+end
+
+hermiteCol = (0.153,0.773,0.369)
+
+for i in 1:MAX_DATA_LENGTH
+    Segment(points[i],vectorEndPoints[i],1.0 .- hermiteCol,hermiteToggle)
 end
 
 for i in 1:(MAX_DATA_LENGTH-1)
@@ -221,100 +241,128 @@ for i in 1:(MAX_DATA_LENGTH-1)
     a = uDependents[i]
     b = uDependents[i+1]
 
-    CreateHermiteCurve(p0,p1,pl0,pl1,a,b,(0.153,0.773,0.369))    
+    CreateHermiteCurve(p0,p1,pl0,pl1,a,b,hermiteCol,hermiteToggle)    
 end
 
 # ? Catmull-Rom-With-Hermite
 
-function FMILLTangent(p0,p2)
+
+
+function FMILLTangent(p0,p2,normalizeVec=true)
     l1 = collect(p2.-p0)
-    l1 = normalize(l1)
+
+    if normalizeVec
+        l1 = normalize(l1)
+    end
+    
     return Tuple(l1)
 end
 
-function BesselTangentAt0(p0,p1,p2)
+function BesselTangentAt0(p0,p1,p2,normalizeVec=true)
     l0 = collect(4.0 .* (p1 .- p0) .- (p2 .- p0))
-    l0 = normalize(l0)
+    
+    if normalizeVec
+        l0 = normalize(l0)
+    end
+    
     return Tuple(l0)
 end
 
-function BesselTangentAt2(p0,p1,p2)
+function BesselTangentAt2(p0,p1,p2,normalizeVec=true)
     l2 = collect(4.0 .* (p2 .- p1) .- (p2 .- p0))
-    l2 = normalize(l2)
+    
+    if normalizeVec
+        l2 = normalize(l2)
+    end
+    
     return Tuple(l2)
 end
 
-
-crLEndPoints = []
-
-p0 = points[1]
-p1 = points[2]
-p2 = points[3]
-crL1 = Point([p0,p1,p2]) do p0,p1,p2
-    return p0[:xyz] .+ BesselTangentAt0(p0[:xyz],p1[:xyz],p2[:xyz])
-end
-
-push!(crLEndPoints,crL1)
-
-p0 = points[1]
-p1 = points[2]
-p2 = points[3]
-crL2 = Point([p0,p1,p2,splineData]) do p0,p1,p2,splineData
-    data = splineData[:val]
+function CatmullRomHermite(normalizeVecs,color)
     
-    if data.dataLength == 2
-        return p2[:xyz] .+ BesselTangentAt2(p0[:xyz],p1[:xyz],p2[:xyz])
+    crwhToggle = Toggle()
+    
+    crLEndPoints = []
+
+    p0 = points[1]
+    p1 = points[2]
+    p2 = points[3]
+    crL1 = Point([p0,p1,p2]) do p0,p1,p2
+        return p0[:xyz] .+ BesselTangentAt0(p0[:xyz],p1[:xyz],p2[:xyz],normalizeVecs)
     end
-    
-    return p1[:xyz] .+ FMILLTangent(p0[:xyz],p2[:xyz])
-end
 
-push!(crLEndPoints,crL2)
+    push!(crLEndPoints,crL1)
 
-for i in 3:(MAX_DATA_LENGTH-1)
-    pm1 = points[i-2]
-    local p0 = points[i-1]
-    local p1 = points[i]
-    local p2 = points[i+1]
-    crLI = Point([pm1,p0,p1,p2,splineData]) do pm1,p0,p1,p2,splineData
+    p0 = points[1]
+    p1 = points[2]
+    p2 = points[3]
+    crL2 = Point([p0,p1,p2,splineData]) do p0,p1,p2,splineData
         data = splineData[:val]
-        
-        if i == data.dataLength
-            return p1[:xyz] .+ BesselTangentAt2(pm1[:xyz],p0[:xyz],p1[:xyz])
-        elseif i < data.dataLength 
-            return p1[:xyz] .+ FMILLTangent(p0[:xyz],p2[:xyz])
+
+        if data.dataLength == 2
+            return p2[:xyz] .+ BesselTangentAt2(p0[:xyz],p1[:xyz],p2[:xyz],normalizeVecs)
         end
-        return nothing
+
+        return p1[:xyz] .+ FMILLTangent(p0[:xyz],p2[:xyz],normalizeVecs)
     end
 
-    push!(crLEndPoints,crLI)
+    push!(crLEndPoints,crL2)
+
+    for i in 3:(MAX_DATA_LENGTH-1)
+        pm1 = points[i-2]
+        local p0 = points[i-1]
+        local p1 = points[i]
+        local p2 = points[i+1]
+        crLI = Point([pm1,p0,p1,p2,splineData]) do pm1,p0,p1,p2,splineData
+            data = splineData[:val]
+
+            if i == data.dataLength
+                return p1[:xyz] .+ BesselTangentAt2(pm1[:xyz],p0[:xyz],p1[:xyz],normalizeVecs)
+            elseif i < data.dataLength 
+                return p1[:xyz] .+ FMILLTangent(p0[:xyz],p2[:xyz],normalizeVecs)
+            end
+            return nothing
+        end
+
+        push!(crLEndPoints,crLI)
+    end
+
+    p0 = points[MAX_DATA_LENGTH-2]
+    p1 = points[MAX_DATA_LENGTH-1]
+    p2 = points[MAX_DATA_LENGTH]
+    crLN = Point([p0,p1,p2]) do p0,p1,p2
+        return p2[:xyz] .+ BesselTangentAt2(p0[:xyz],p1[:xyz],p2[:xyz],normalizeVecs)
+    end
+
+    push!(crLEndPoints,crLN)
+    println(length(crLEndPoints))
+
+    for i in 1:MAX_DATA_LENGTH
+        Segment(points[i],crLEndPoints[i],1.0 .- color,crwhToggle)
+    end
+
+    for i in 1:(MAX_DATA_LENGTH-1)
+        println("$(i) - $(i+1)")
+        local p0 = points[i]
+        local p1 = points[i+1]
+
+        pl0 = crLEndPoints[i]
+        pl1 = crLEndPoints[i+1]
+
+        a = uDependents[i]
+        b = uDependents[i+1]
+
+        CreateHermiteCurve(p0,p1,pl0,pl1,a,b,color,crwhToggle)
+    end
 end
 
-p0 = points[MAX_DATA_LENGTH-2]
-p1 = points[MAX_DATA_LENGTH-1]
-p2 = points[MAX_DATA_LENGTH]
-crLN = Point([p0,p1,p2]) do p0,p1,p2
-    return p2[:xyz] .+ BesselTangentAt2(p0[:xyz],p1[:xyz],p2[:xyz])
-end
+CatmullRomHermite(true,(0.969,0.224,0.439))
 
-push!(crLEndPoints,crLN)
-println(length(crLEndPoints))
-
-for i in 1:(MAX_DATA_LENGTH-1)
-    println("$(i) - $(i+1)")
-    local p0 = points[i]
-    local p1 = points[i+1]
-
-    pl0 = crLEndPoints[i]
-    pl1 = crLEndPoints[i+1]
-
-    a = uDependents[i]
-    b = uDependents[i+1]
-
-    CreateHermiteCurve(p0,p1,pl0,pl1,a,b,(0.969,0.224,0.439))
-end
+CatmullRomHermite(false,(0.945,0.545,0.545))
 
 # ? Catmull-Rom
+
+crToggle = Toggle()
 
 crB = []
 
@@ -368,10 +416,12 @@ for i in 3:(MAX_DATA_LENGTH-1)
         data = splineData[:val]
         
         if i < data.dataLength
+            println("$(i) - FMILL")
             mum1 = (b[:val] - a[:val]) / (c[:val] - a[:val])
             l = ((p2[:xyz] .- p0[:xyz]) .* mum1) ./ 3.0
             return p1[:xyz] .- l
         elseif i == data.dataLength
+            println("$(i) - Bessel2")
             l = BesselTangentAt2(pm1[:xyz],p0[:xyz],p1[:xyz])
             mu = b[:val] - a[:val] 
             return -1 .* l .* (mu / 3.0) .+ p1[:xyz]
@@ -421,7 +471,7 @@ for i in 2:MAX_DATA_LENGTH
         return p1[:xyz]
     end
 
-    QuadradicBezierCurve(a,b,b0,b1,b2,b3,(0.255,0.706,0.784))
+    QuadradicBezierCurve(a,b,b0,b1,b2,b3,(0.255,0.706,0.784),crToggle)
 end
 
 play!()
