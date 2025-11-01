@@ -96,7 +96,17 @@ splineData = GenericDependent(INIT_SPLINEDATA,[txtSplineData,pData,uData,lData])
                 push!(u,prev)
             end
         elseif uStr == "ARCLENGTH"
-            
+            prev = 0.0
+            push!(u,prev)
+            for i in 2:dataLength
+                last = collect(p[i-1])
+                curr = collect(p[i])
+                next = prev + norm(last - curr)
+
+                push!(u,next)
+                
+                prev = next
+            end
         elseif uStr == "BOX"
             u = uData[:val]
         end
