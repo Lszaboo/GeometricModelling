@@ -16,6 +16,16 @@ function Segment(fst,snd,color,toggle)
     end
 end
 
+function GenericDependentSegment(fst,snd,color,toggle)
+    return ParametricCurve(0,1,2,color,[fst,snd,toggle]) do t,a,b,toggle
+        if (toggle[:state])
+            return nothing 
+        end
+        
+        return a[:val] .* t .+ (1-t) .* b[:val]
+    end
+end
+
 struct SplineData
     dataLength::Int
     p::Vector{Tuple{Float64,Float64,Float64}}
@@ -34,6 +44,63 @@ INIT_SPLINEDATA = SplineData(
     INIT_U,
     INIT_L
 )
+
+SAMPLE_DICT_P = Dict()
+SAMPLE_DICT_U = Dict()
+SAMPLE_DICT_L = Dict()
+
+SAMPLE_DICT_P["S1"] =   [    
+                            (1.0,  0.0,  1.0),
+	                        (-1.0,  0.0,  1.0), 
+	                        (-1.0,  0.0, -1.0),
+	                        ( 1.0,  0.0, -1.0)
+                        ]
+SAMPLE_DICT_U["S1"] =   [1.0,2.0,3.0,4.0]
+SAMPLE_DICT_L["S1"] =   [	
+                            (-1.0,  0.0,  1.0),
+	                        (-1.0,  0.0, -1.0), 
+	                        ( 1.0,  0.0, -1.0),
+	                        ( 1.0,  0.0,  1.0)
+	                    ]
+
+SAMPLE_DICT_P["S2"] =   [    
+                            (1.0,  0.0,  1.0), 
+	                        (-1.0,  0.0, -1.0),
+	                        ( 1.0,  0.0, -1.0),
+                            (-1.0,  0.0,  1.0)
+                        ]
+SAMPLE_DICT_U["S2"] =   [1.0,2.0,3.0,4.0]
+SAMPLE_DICT_L["S2"] =   [	
+                            (-1.0,  0.0,  1.0), 
+	                        ( 1.0,  0.0, -1.0),
+	                        ( 1.0,  0.0,  1.0),
+                            (-1.0,  0.0, -1.0),
+	                    ]
+
+
+SAMPLE_DICT_P["S3"] =   [
+                            ( 5.0,  0.0,  5.0),
+                            (-2.0,  0.0,  6.5), 
+                            (-5.0,  0.0,  5.0),
+                            (-5.0,  0.0,  0.0),
+                            ( 0.0,  0.0, -2.0),
+                            ( 4.0,  0.0, -2.0),
+                            ( 5.0,  0.0, -5.0),
+                            ( 0.0,  0.0, -9.0),
+                            (-5.0,  0.0, -8.1)
+                        ]
+
+SAMPLE_DICT_L["S3"] =   [
+                            (-5.0,  0.0,  5.0),
+                            (-4.0,  0.0, -1.0), 
+                            (-3.0,  0.0, -3.0),
+                            ( 5.0,  0.0, -5.0),
+                            ( 3.0,  0.0,  2.0),
+                            ( 2.5,  0.0, -2.0),
+                            (-3.0,  0.0, -3.0),
+                            (-5.0,  0.0,  4.0),
+                            (-5.0,  0.0,  3.0)
+                        ]
 
 INIT_SPLINEDATA_STRING = """
 {
@@ -81,6 +148,8 @@ splineData = GenericDependent(INIT_SPLINEDATA,[txtSplineData,pData,uData,lData])
             end
         elseif pStr == "BOX"
             p = pData[:val]
+        elseif pStr in keys(SAMPLE_DICT_P)
+            p = SAMPLE_DICT_P[pStr]
         end
         
         u = []
@@ -109,6 +178,8 @@ splineData = GenericDependent(INIT_SPLINEDATA,[txtSplineData,pData,uData,lData])
             end
         elseif uStr == "BOX"
             u = uData[:val]
+        elseif uStr in keys(SAMPLE_DICT_U)
+            u = SAMPLE_DICT_U[uStr]
         end
         
         l = []
@@ -120,6 +191,8 @@ splineData = GenericDependent(INIT_SPLINEDATA,[txtSplineData,pData,uData,lData])
             end
         elseif lStr == "BOX"
             l = lData[:val]
+        elseif lStr in keys(SAMPLE_DICT_L)
+            l = SAMPLE_DICT_L[lStr]
         end
 
         if !(length(p) == length(u) == length(l) == dataLength)
@@ -178,8 +251,6 @@ end
 
 # ? Hermite-Interpolation
 
-hermiteToggle = Toggle()
-
 function Bernstein(n,k,t)
     return binomial(n,k) * ((1-t)^(n-k)) * (t^(k))
 end
@@ -195,9 +266,20 @@ function QuadradicBezier(p0,p1,p2,p3,u,a=0.0,b=1.0)
     return val
 end
 
-function QuadradicBezierCurve(a,b,b0,b1,b2,b3,color,toggle)
-    return ParametricCurve(0.0,1.0,1000,color,[a,b,b0,b1,b2,b3,toggle]) do t,a,b,b0,b1,b2,b3,toggle
-        if  (toggle[:state])
+function QuadradicBezierCurve(a,b,b0,b1,b2,b3,color,toggle1,toggle2)
+    colR = 1.0 - color[1]
+    colG = color[2]
+    colB = 1.0 - color[3]
+
+    color2 = (colR,colG,colB)
+
+    GenericDependentSegment(b0,b1,color2,toggle2)
+    GenericDependentSegment(b1,b2,color2,toggle2)
+    GenericDependentSegment(b2,b3,color2,toggle2)
+    
+    
+    return ParametricCurve(0.0,1.0,1000,color,[a,b,b0,b1,b2,b3,toggle1]) do t,a,b,b0,b1,b2,b3,toggle1
+        if  (toggle1[:state])
             return nothing
         end
         
@@ -210,7 +292,7 @@ function QuadradicBezierCurve(a,b,b0,b1,b2,b3,color,toggle)
     end
 end
 
-function CreateHermiteCurve(p0,p1,pl0,pl1,a,b,color,toggle)
+function CreateHermiteCurve(p0,p1,pl0,pl1,a,b,color,toggle1,toggle2)
     b0 = GenericDependent(NAN_COORDS,[p0]) do p0
         return p0[:xyz]
     end
@@ -231,13 +313,15 @@ function CreateHermiteCurve(p0,p1,pl0,pl1,a,b,color,toggle)
         return p1[:xyz]
     end
     
-    QuadradicBezierCurve(a,b,b0,b1,b2,b3,color,toggle)
+    QuadradicBezierCurve(a,b,b0,b1,b2,b3,color,toggle1,toggle2)
 end
 
 hermiteCol = (0.153,0.773,0.369)
+hermiteToggle1 = Toggle()
+hermiteToggle2 = Toggle()
 
 for i in 1:MAX_DATA_LENGTH
-    Segment(points[i],vectorEndPoints[i],1.0 .- hermiteCol,hermiteToggle)
+    Segment(points[i],vectorEndPoints[i],1.0 .- hermiteCol,hermiteToggle1)
 end
 
 for i in 1:(MAX_DATA_LENGTH-1)
@@ -251,7 +335,7 @@ for i in 1:(MAX_DATA_LENGTH-1)
     a = uDependents[i]
     b = uDependents[i+1]
 
-    CreateHermiteCurve(p0,p1,pl0,pl1,a,b,hermiteCol,hermiteToggle)    
+    CreateHermiteCurve(p0,p1,pl0,pl1,a,b,hermiteCol,hermiteToggle1,hermiteToggle2)    
 end
 
 # ? Catmull-Rom-With-Hermite
@@ -289,8 +373,6 @@ function BesselTangentAt2(p0,p1,p2,normalizeVec=true)
 end
 
 function CatmullRomHermite(normalizeVecs,color)
-    
-    crwhToggle = Toggle()
     
     crLEndPoints = []
 
@@ -347,8 +429,11 @@ function CatmullRomHermite(normalizeVecs,color)
     push!(crLEndPoints,crLN)
     println(length(crLEndPoints))
 
+    crwhToggle1 = Toggle()
+    crwhToggle2 = Toggle()
+
     for i in 1:MAX_DATA_LENGTH
-        Segment(points[i],crLEndPoints[i],1.0 .- color,crwhToggle)
+        Segment(points[i],crLEndPoints[i],1.0 .- color,crwhToggle1)
     end
 
     for i in 1:(MAX_DATA_LENGTH-1)
@@ -362,7 +447,7 @@ function CatmullRomHermite(normalizeVecs,color)
         a = uDependents[i]
         b = uDependents[i+1]
 
-        CreateHermiteCurve(p0,p1,pl0,pl1,a,b,color,crwhToggle)
+        CreateHermiteCurve(p0,p1,pl0,pl1,a,b,color,crwhToggle1,crwhToggle2)
     end
 end
 
@@ -371,8 +456,6 @@ CatmullRomHermite(true,(0.969,0.224,0.439))
 CatmullRomHermite(false,(0.945,0.545,0.545))
 
 # ? Catmull-Rom
-
-crToggle = Toggle()
 
 crB = []
 
@@ -463,6 +546,9 @@ end
 
 push!(crB,(crBN,nothing))
 
+crToggle1 = Toggle()
+crToggle2 = Toggle()
+
 for i in 2:MAX_DATA_LENGTH
     local p0 = points[i-1]
     local p1 = points[i]
@@ -481,7 +567,7 @@ for i in 2:MAX_DATA_LENGTH
         return p1[:xyz]
     end
 
-    QuadradicBezierCurve(a,b,b0,b1,b2,b3,(0.255,0.706,0.784),crToggle)
+    QuadradicBezierCurve(a,b,b0,b1,b2,b3,(0.255,0.706,0.784),crToggle1,crToggle2)
 end
 
 play!()
